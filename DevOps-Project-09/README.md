@@ -705,28 +705,32 @@ sudo hostnamectl set-hostname K8s-Master
 sudo hostnamectl set-hostname K8s-Worker
 ```
 
-- Part 2 ------------Both Master & Node ------------
+- Part 2 — install the container runtime and Kubernetes tools on both nodes
 
 ```bash
-sudo apt-get update 
-
-sudo apt-get install -y docker.io
-sudo usermod –aG docker Ubuntu
-newgrp docker
-sudo chmod 777 /var/run/docker.sock
-
-sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-
-sudo tee /etc/apt/sources.list.d/kubernetes.list <<EOF
-deb https://apt.kubernetes.io/ kubernetes-xenial main
-EOF
-
 sudo apt-get update
+sudo apt-get install -y ca-certificates curl gpg containerd
 
+# Configure containerd to use the systemd cgroup driver used by kubelet.
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml >/dev/null
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+sudo systemctl enable --now containerd
+sudo systemctl restart containerd
+
+# Add the signed Kubernetes v1.37 package repository.
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.37/deb/Release.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.37/deb/ /' \
+  | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl
-
-sudo snap install kube-apiserver
+sudo apt-mark hold kubelet kubeadm kubectl
 ```
+
+Kubernetes publishes a separate package repository for each minor release. This example uses v1.37; use the repository for the minor version you intend to install on every node. `kubeadm` installs the control-plane components, including the API server, so do not install `kube-apiserver` with Snap. Kubernetes uses containerd through the Container Runtime Interface; Docker Engine alone is not a supported runtime without the separate `cri-dockerd` adapter. Do not make the Docker socket world-writable.
 
 - Part 3 --------------- Master ---------------
 
